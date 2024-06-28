@@ -19,3 +19,5 @@ int parse_command_arguments(
 );
 int start_shell();
 int dispatch_commands();
+int cd_handler(char **command_args, size_t command_args_length);
+int exec_handler(char **command_args, size_t command_args_length);

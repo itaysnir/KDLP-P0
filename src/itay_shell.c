@@ -78,6 +78,47 @@ cleanup:
 }
 
 
+int cd_handler(char **command_args, size_t command_args_length)
+{
+    int retval = 0;
+    if (command_args_length != 2)
+    {
+        printf("cd: takes exactly one argument\n");
+        goto cleanup;
+    }
+
+    if (chdir(command_args[1]) < 0)
+    {
+        printf("chdir failed: %s\n", strerror(errno));
+        retval = -1;
+        goto cleanup;
+    }
+
+cleanup:
+    return retval;
+}
+
+int exec_handler(char **command_args, size_t command_args_length)
+{
+    int retval = 0;
+    if (command_args_length < 2)
+    {
+        printf("exec: takes at least one argument\n");
+        goto cleanup;
+    }
+
+    if (execv(command_args[1], command_args + 1) < 0)
+    {
+        printf("exec failed: %s\n", strerror(errno));
+        retval = -1;
+        goto cleanup;
+    }
+
+cleanup:
+    return retval;
+}
+
+
 int parse_command(char *command)
 {
     int retval = 0;
@@ -111,9 +152,15 @@ int parse_command(char *command)
 
     else if (strcmp(command_program, "cd") == 0)
     {
+        cd_handler(command_args, command_args_length);
         goto cleanup;
     }
 
+    else if (strcmp(command_program, "exec") == 0)
+    {
+        exec_handler(command_args, command_args_length);
+        goto cleanup;
+    }
 
     else
     {

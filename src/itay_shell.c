@@ -384,8 +384,11 @@ cleanup:
 int resolve_executable_path(char **command_args, char **exec_path)
 {
     int retval = 0;
-    char *const absolute_path = calloc(1, ABOSOLUTE_PATH_MAX_SIZE);
+    int valid_absolute_path = 0;
+    char *absolute_path = NULL;
+    char *tokenized_path_environ = NULL;
     const size_t absolute_path_size = ABOSOLUTE_PATH_MAX_SIZE;
+    absolute_path = calloc(1, absolute_path_size);
     if (absolute_path == NULL)
     {
         retval = -1;
@@ -395,27 +398,28 @@ int resolve_executable_path(char **command_args, char **exec_path)
     const char *const path_environ = getenv("PATH");
     if (path_environ == NULL)
     {
-        retval = -1;
+        retval = -2;
         goto cleanup;
     }
 
     /** Create a copy of environ, on which we can perform strtok */
-    char *const tokenized_path_environ = strdup(path_environ);
+    tokenized_path_environ = strdup(path_environ);
     if (tokenized_path_environ == NULL)
     {
-        retval = -2;
+        retval = -3;
         goto cleanup;
     }
 
     char *dirpath = strtok(tokenized_path_environ, ":");
     while (dirpath != NULL)
     {
-        if (search_file_within_dir(command_args[0], dirpath, absolute_path, absolute_path_size) != 0)
+        if (search_file_within_dir(command_args[0], dirpath, absolute_path, absolute_path_size) < 0)
         {
-            retval = -3;
+            retval = -4;
         }
         else
         {
+            valid_absolute_path = 1;
             retval = 0;
             *exec_path = absolute_path;
             break;
@@ -424,9 +428,13 @@ int resolve_executable_path(char **command_args, char **exec_path)
     }
 
 cleanup:
-    if (retval < -1)
+    if (tokenized_path_environ)
     {
         free(tokenized_path_environ);
+    }
+    if (!valid_absolute_path && absolute_path)
+    {
+        free(absolute_path);
     }
     return retval;
 }

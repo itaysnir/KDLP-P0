@@ -53,6 +53,105 @@ int is_end_of_string(char c)
     return c == '\n' || c == '\0';
 }
 
+
+int append_strings_with_slash(char *const dst, size_t dst_size, const char *const src)
+{
+    int retval = 0;
+    if (dst == NULL || src == NULL)
+    {
+        retval = -1;
+        goto cleanup;
+    }
+    if (strlen(dst) + strlen(src) + 2 >= dst_size)
+    {
+        retval = -2;
+        goto cleanup;
+    }
+    strncat(dst, src, strlen(src) + 1);
+    strncat(dst, "/", 2);
+    retval = (int)(strlen(src)) + 1;
+
+cleanup:
+    return retval;
+}
+
+
+int store_and_clear_argument(char* const argument, size_t argument_size, char **const command_args, size_t *argument_number)
+{
+    int retval = 0;
+    char *argument_cp = strdup(argument);
+    if (argument_cp == NULL)
+    {
+        retval = -1;
+        goto cleanup;
+    }
+    command_args[*argument_number] = argument_cp;
+    memset(argument, 0, argument_size);
+    *argument_number += 1;
+
+cleanup:
+    return retval;
+}
+
+
+int write_username_to_argument(
+    size_t i,
+    size_t username_start_index,
+    char *const argument, 
+    size_t argument_size, 
+    size_t *argument_pos,
+    char *const command
+    )
+{
+    int retval = 0;
+    char username[USERNAME_MAX_SIZE] = {0};
+    memcpy(username, &command[username_start_index + 1], i - username_start_index - 1);
+    if (strlen(username) == 0)
+    {
+        /** Default - use the $HOME env variable */
+        int appended_bytes_count = append_strings_with_slash(argument, argument_size, getenv("HOME"));
+        if (appended_bytes_count < 0)
+        {
+            retval = -1;
+            goto cleanup;
+        }
+        *argument_pos += appended_bytes_count;
+    }
+    else
+    {
+        /** Found a candidate username */
+        const struct passwd *const user_pwd = getpwnam(username);
+        if (user_pwd == NULL || user_pwd->pw_dir == NULL)
+        {
+            /** No such user, leave the piece unmodified */
+            if (strlen(argument) + strlen(username) + 3 >= argument_size)
+            {
+                retval = -2;
+                goto cleanup;
+            }
+            strncat(argument, "~", 2);
+            strncat(argument, username, argument_size);
+            strncat(argument, "/", 2);
+            *argument_pos += strlen(username) + 2;
+        }
+        else
+        {
+            /** username found */
+            int appended_bytes_count = append_strings_with_slash(argument, argument_size, user_pwd->pw_dir);
+            if (appended_bytes_count < 0)
+            {
+                retval = -3;
+                goto cleanup;
+            }
+            *argument_pos += appended_bytes_count; 
+        }
+    }
+
+cleanup:
+    return retval;
+}
+
+
 int parse_command_arguments(
     char *command, 
     size_t command_length, 
@@ -62,112 +161,54 @@ int parse_command_arguments(
 {
     int retval = 0;
     char argument[ARGUMENT_MAX_SIZE] = {0};
-    char username[USERNAME_MAX_SIZE] = {0};
     int new_username = 0;
     int prev_was_space = 0;
     size_t username_start_index = 0;
     size_t argument_pos = 0;
     size_t argument_number = 0;
-    for (size_t i = 0 ; (i < command_length) && (argument_number < max_command_args_length) ; i++)
+    for (size_t i = 0 ; (i < command_length) && (argument_number < max_command_args_length - 1) ; i++)
     {
         if (!new_username && command[i] == '~')
         {
             prev_was_space = 0;
             new_username = 1;
-            memset(username, 0, sizeof(username));
             username_start_index = i;
         }
         else if (new_username && (command[i] == '/' || is_end_of_string(command[i])))
         {
             prev_was_space = 0;
             new_username = 0;
-            memcpy(username, &command[username_start_index + 1], i - username_start_index - 1);
-            if (strlen(username) == 0)
-            {
-                /** Default - use the $HOME env variable */
-                const char *const home_environ = getenv("HOME");
-                if (home_environ == NULL)
-                {
-                    retval = -2;
-                    goto cleanup;
-                }
-                if (strlen(argument) + strlen(home_environ) + 2 >= sizeof(argument))
-                {
-                    retval = -3;
-                    goto cleanup;
-                }
-                strncat(argument, home_environ, strlen(home_environ) + 1);
-                strncat(argument, "/", 2);
-                argument_pos += strlen(home_environ) + 1; 
-            }
-
-            else
-            {
-                const struct passwd *const user_pwd = getpwnam(username);
-                if (user_pwd == NULL || user_pwd->pw_dir == NULL)
-                {
-                    /** No such user, leave the piece unmodified */
-                    if (strlen(argument) + strlen(username) + 3 >= sizeof(argument))
-                    {
-                        retval = -4;
-                        goto cleanup;
-                    }
-                    strncat(argument, "~", 2);
-                    strncat(argument, username, sizeof(argument));
-                    strncat(argument, "/", 2);
-                    argument_pos += strlen(username) + 2; 
-                }
-                else
-                {
-                    /** username found */
-                    if (strlen(argument) + strlen(user_pwd->pw_dir) + 2 >= sizeof(argument))
-                    {
-                        retval = -5;
-                        goto cleanup;
-                    }
-                    strncat(argument, user_pwd->pw_dir, sizeof(argument));
-                    strncat(argument, "/", 2); // todo - check this, was &command[i]
-                    argument_pos += strlen(user_pwd->pw_dir) + 1;
-                }
-            }
-
-            if (is_end_of_string(command[i]))
-            {
-                char *argument_cp = strdup(argument);
-                if (argument_cp == NULL)
-                {
-                    retval = -1;
-                    goto cleanup;
-                }
-                command_args[argument_number++] = argument_cp;
-                
-            }
-        }
-
-        else if (isspace(command[i]) && prev_was_space)
-        {
-            continue;
-        }
-
-        else if (isspace(command[i]) && !prev_was_space)
-        {
-            char *argument_cp = strdup(argument);
-            if (argument_cp == NULL)
+            if (write_username_to_argument(i, username_start_index, argument, sizeof(argument), &argument_pos, command) < 0)
             {
                 retval = -1;
                 goto cleanup;
             }
-            command_args[argument_number] = argument_cp;
-            memset(argument, 0, sizeof(argument));
-            argument_number += 1;
+            if (is_end_of_string(command[i]))
+            {
+                if (store_and_clear_argument(argument, sizeof(argument), command_args, &argument_number) < 0)
+                {
+                    retval = -1;
+                    goto cleanup;
+                }
+            }
+        }
+
+        else if (isspace(command[i]))
+        {
+            if (prev_was_space) { continue; }
+            if (store_and_clear_argument(argument, sizeof(argument), command_args, &argument_number) < 0)
+            {
+                retval = -1;
+                goto cleanup;
+            };
             argument_pos = 0;
             prev_was_space = 1;
         }
+            
         else if (!new_username)
         {
             if (argument_pos >= sizeof(argument))
             {
-                printf("Buffer overrun occurs, terminatedin..\n");
                 retval = -3;
                 goto cleanup;
             }

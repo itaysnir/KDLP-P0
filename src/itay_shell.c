@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <pwd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -15,7 +16,7 @@
 int prompt()
 {
     int retval = 0;
-    char absolute_path[ABOSOLUTE_PATH_MAX_LENGTH] = {0};
+    char absolute_path[ABOSOLUTE_PATH_MAX_SIZE] = {0};
     char* path = getcwd(absolute_path, sizeof(absolute_path));
     if (path == NULL)
     {
@@ -46,6 +47,12 @@ cleanup:
     return retval;
 }
 
+
+int is_end_of_string(char c)
+{
+    return c == '\n' || c == '\0';
+}
+
 int parse_command_arguments(
     char *command, 
     size_t command_length, 
@@ -54,26 +61,122 @@ int parse_command_arguments(
     size_t *command_args_length)
 {
     int retval = 0;
+    char argument[ARGUMENT_MAX_SIZE] = {0};
+    char username[USERNAME_MAX_SIZE] = {0};
+    int new_username = 0;
+    int prev_was_space = 0;
+    size_t username_start_index = 0;
+    size_t argument_pos = 0;
     size_t argument_number = 0;
-    size_t argument_start_index = 0;
-    for (size_t i = 0 ; i < command_length && argument_number < max_command_args_length ; i++)
+    for (size_t i = 0 ; (i < command_length) && (argument_number < max_command_args_length) ; i++)
     {
-        if (isspace(command[i]))
+        if (!new_username && command[i] == '~')
         {
-            size_t argument_size = i - argument_start_index + 1;
-            char *argument = (char *)calloc(1, argument_size);
-            if (argument == NULL)
+            prev_was_space = 0;
+            new_username = 1;
+            memset(username, 0, sizeof(username));
+            username_start_index = i;
+        }
+        else if (new_username && (command[i] == '/' || is_end_of_string(command[i])))
+        {
+            prev_was_space = 0;
+            new_username = 0;
+            memcpy(username, &command[username_start_index + 1], i - username_start_index - 1);
+            if (strlen(username) == 0)
+            {
+                /** Default - use the $HOME env variable */
+                const char *const home_environ = getenv("HOME");
+                if (home_environ == NULL)
+                {
+                    retval = -2;
+                    goto cleanup;
+                }
+                if (strlen(argument) + strlen(home_environ) + 2 >= sizeof(argument))
+                {
+                    retval = -3;
+                    goto cleanup;
+                }
+                strncat(argument, home_environ, strlen(home_environ) + 1);
+                strncat(argument, "/", 2);
+                argument_pos += strlen(home_environ) + 1; 
+            }
+
+            else
+            {
+                const struct passwd *const user_pwd = getpwnam(username);
+                if (user_pwd == NULL || user_pwd->pw_dir == NULL)
+                {
+                    /** No such user, leave the piece unmodified */
+                    if (strlen(argument) + strlen(username) + 3 >= sizeof(argument))
+                    {
+                        retval = -4;
+                        goto cleanup;
+                    }
+                    strncat(argument, "~", 2);
+                    strncat(argument, username, sizeof(argument));
+                    strncat(argument, "/", 2);
+                    argument_pos += strlen(username) + 2; 
+                }
+                else
+                {
+                    /** username found */
+                    if (strlen(argument) + strlen(user_pwd->pw_dir) + 2 >= sizeof(argument))
+                    {
+                        retval = -5;
+                        goto cleanup;
+                    }
+                    strncat(argument, user_pwd->pw_dir, sizeof(argument));
+                    strncat(argument, "/", 2); // todo - check this, was &command[i]
+                    argument_pos += strlen(user_pwd->pw_dir) + 1;
+                }
+            }
+
+            if (is_end_of_string(command[i]))
+            {
+                char *argument_cp = strdup(argument);
+                if (argument_cp == NULL)
+                {
+                    retval = -1;
+                    goto cleanup;
+                }
+                command_args[argument_number++] = argument_cp;
+                
+            }
+        }
+
+        else if (isspace(command[i]) && prev_was_space)
+        {
+            continue;
+        }
+
+        else if (isspace(command[i]) && !prev_was_space)
+        {
+            char *argument_cp = strdup(argument);
+            if (argument_cp == NULL)
             {
                 retval = -1;
                 goto cleanup;
             }
-            memcpy(argument, &command[argument_start_index], argument_size - 1);
-            command_args[argument_number] = argument;
+            command_args[argument_number] = argument_cp;
+            memset(argument, 0, sizeof(argument));
             argument_number += 1;
-            argument_start_index += argument_size; 
+            argument_pos = 0;
+            prev_was_space = 1;
+        }
+        else if (!new_username)
+        {
+            if (argument_pos >= sizeof(argument))
+            {
+                printf("Buffer overrun occurs, terminatedin..\n");
+                retval = -3;
+                goto cleanup;
+            }
+            argument[argument_pos++] = command[i];
+            prev_was_space = 0;
         }
     }
 
+    command_args[argument_number] = NULL;
     *command_args_length = argument_number;
 
 cleanup:
@@ -184,7 +287,6 @@ int execute_command(char **command_args)
     else
     {
         /** Child */
-        printf("Executing command: %s\n", command_args[0]);
         if (execv(command_args[0], command_args) < 0)
         {
             printf("child exec failed: %s\n", strerror(errno));
@@ -241,15 +343,15 @@ cleanup:
 int resolve_executable_path(char **command_args, char **exec_path)
 {
     int retval = 0;
-    char *absolute_path = calloc(1, ABOSOLUTE_PATH_MAX_LENGTH);
-    const size_t absolute_path_size = ABOSOLUTE_PATH_MAX_LENGTH;
+    char *const absolute_path = calloc(1, ABOSOLUTE_PATH_MAX_SIZE);
+    const size_t absolute_path_size = ABOSOLUTE_PATH_MAX_SIZE;
     if (absolute_path == NULL)
     {
         retval = -1;
         goto cleanup;
     }
 
-    char *path_environ = getenv("PATH");
+    const char *const path_environ = getenv("PATH");
     if (path_environ == NULL)
     {
         retval = -1;
@@ -257,7 +359,7 @@ int resolve_executable_path(char **command_args, char **exec_path)
     }
 
     /** Create a copy of environ, on which we can perform strtok */
-    char *tokenized_path_environ = strdup(path_environ);
+    char *const tokenized_path_environ = strdup(path_environ);
     if (tokenized_path_environ == NULL)
     {
         retval = -2;
@@ -330,7 +432,7 @@ int parse_command(char *command)
     size_t command_args_length = 0;
 
     size_t command_length = strlen(command);
-    if (command_length > COMMAND_MAX_LENGTH - 1)
+    if (command_length > COMMAND_MAX_SIZE - 1)
     {
         retval = -1;
         goto cleanup;
@@ -374,7 +476,7 @@ cleanup:
 int dispatch_commands()
 {  
     int retval = 0;
-    char command_buffer[COMMAND_MAX_LENGTH] = {0}; 
+    char command_buffer[COMMAND_MAX_SIZE] = {0}; 
     
     while (1)
     {

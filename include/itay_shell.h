@@ -8,7 +8,7 @@
 
 
 int prompt();
-int read_command(char *command, size_t length);
+int read_command_line(char *command, size_t length);
 int parse_command(char *command);
 int parse_command_arguments(
     char *command, 
@@ -21,3 +21,6 @@ int start_shell();
 int dispatch_commands();
 int cd_handler(char **command_args, size_t command_args_length);
 int exec_handler(char **command_args, size_t command_args_length);
+int try_dispatch_builtin_command(char **command_args, size_t command_args_length);
+int execute_command(char **command_args);
+int try_run_executable_command(char **command_args, size_t command_args_length);

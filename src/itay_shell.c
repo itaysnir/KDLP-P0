@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include "itay_shell.h"
 
 
@@ -48,13 +49,13 @@ cleanup:
 }
 
 
-int is_end_of_string(char c)
+int is_end_of_string(const char c)
 {
     return c == '\n' || c == '\0';
 }
 
 
-int is_redirect(char c)
+int is_redirect(const char c)
 {
     return c == '<' || c == '>';
 }
@@ -82,10 +83,10 @@ cleanup:
 }
 
 
-int store_argument(char* const argument, char **const command_args, size_t *command_args_length)
+int store_argument(const char* const argument, char **const command_args, size_t *const command_args_length)
 {
     int retval = 0;
-    char *argument_cp = strdup(argument);
+    char *const argument_cp = strdup(argument);
     if (argument_cp == NULL)
     {
         retval = -1;
@@ -148,16 +149,30 @@ cleanup:
     return retval;
 }
 
-size_t read_token(char *const token, const size_t token_size, char *const component, const size_t component_length)
+size_t read_whitespaces(const char *const component, const size_t component_length)
+{
+    size_t i = 0;
+    while(
+        isspace(component[i]) &&
+        i < component_length
+    )
+    {
+        i++;
+    }
+
+    return i;
+}
+
+size_t read_token(char *const token, const size_t token_size, const char *const component, const size_t component_length)
 {
     size_t i = 0;
     memset(token, 0, token_size);
     while (
         !is_end_of_string(component[i]) &&
         !isspace(component[i]) &&
-        !is_redirect(component[i] && 
-        i < token_size - 1 &&
-        i < component_length)
+        !is_redirect(component[i]) && 
+        (i < token_size - 1) &&
+        (i < component_length)
     )
     {
         token[i] = component[i];
@@ -238,13 +253,43 @@ cleanup:
     return retval;
 }
 
+int try_parse_username_path_argument(
+    char *const token, 
+    const size_t token_length, 
+    char *const username,
+    const size_t username_size,
+    char *const argument,
+    const size_t argument_size
+    )
+{
+    int retval = 0;
+    if (token[0] == '~')
+    {
+        /** Token represents a special path, depending on the username */
+        if (resolve_username_argument(token, token_length, username, username_size, argument, argument_size) < 0)
+        {
+            retval = -1;
+            goto cleanup;
+        }
+    }
+    else
+    {
+        /** Regular token */
+        memcpy(argument, token, argument_size);
+    }
+cleanup:
+    return retval;
+}
+
 
 int parse_command_arguments(
-    char *const command, 
+    const char *const command, 
     const size_t command_length,
     const size_t command_args_size, 
     char **const command_args, 
-    size_t *const command_args_length)
+    size_t *const command_args_length,
+    const char **const stdin_filename,
+    const char **const stdout_filename)
 {
     int retval = 0;
     char token[ARGUMENT_MAX_SIZE] = {0};
@@ -268,31 +313,58 @@ int parse_command_arguments(
             break;
         }
 
-        // else if (is_redirect(command[i]))
-        // {
-        //     /** TODO - implement this.
-        //      * Stage 1 - obtain filename (write a method to read up until the next space, and increment argument_pos)
-        //      * Notice - redirects can appear also in the middle of a token. 
-        //      */
-        // } 
+        else if (is_redirect(command[i]))
+        {
+            /** TODO - implement this.
+             * Stage 1 - obtain filename (write a method to read up until the next space, and increment argument_pos)
+             */
+            size_t whitespaces_count = read_whitespaces(&command[i] + 1, command_length - i - 1);
+            if (whitespaces_count == command_length - i - 1)
+            {
+                /** Reached end of command string, without finding a candidate filename */
+                printf("Error: no filename provided for redirection\n");
+                retval = -3;
+                goto cleanup;
+            }
+
+            size_t token_length = read_token(token, sizeof(token), &command[i] + 1 + whitespaces_count, command_length - i - 1 - whitespaces_count);
+            if (token_length == 0)
+            {
+                printf("Error: no filename provided for multiple redirections\n");
+                retval = -4;
+                goto cleanup;
+            }
+            if (try_parse_username_path_argument(token, token_length, username, sizeof(username), argument, sizeof(argument)) < 0)
+            {
+                retval = -5;
+                goto cleanup;
+            }
+
+            if (command[i] == '<')
+            {
+                *stdin_filename = strdup(argument);
+            }
+            else 
+            {
+                *stdout_filename = strdup(argument);
+            }
+            if (*stdin_filename == NULL && *stdout_filename == NULL)
+            {
+                retval = -6;
+                goto cleanup;
+            }
+
+            i += 1 + whitespaces_count + token_length;
+        } 
 
         else
         {
+            /** Regular argument token */
             size_t token_length = read_token(token, sizeof(token), &command[i], command_length - i);
-            printf("TOKEN: %s\n", token);
-            if (token[0] == '~')
+            if (try_parse_username_path_argument(token, token_length, username, sizeof(username), argument, sizeof(argument)) < 0)
             {
-                /** Token represents special path */
-                if (resolve_username_argument(token, token_length, username, sizeof(username), argument, sizeof(argument)) < 0)
-                {
-                    retval = -1;
-                    goto cleanup;
-                }
-            }
-            else
-            {
-                /** Regular token */
-                memcpy(argument, token, sizeof(argument));
+                retval = -1;
+                goto cleanup;
             }
 
             if (store_argument(argument, command_args, command_args_length) < 0)
@@ -300,6 +372,7 @@ int parse_command_arguments(
                 retval = -2;
                 goto cleanup;
             };
+
             i += token_length;
         }
     }
@@ -311,7 +384,7 @@ cleanup:
 }
 
 
-int cd_handler(char **command_args, size_t command_args_length)
+int cd_handler(char *const *const command_args, const size_t command_args_length)
 {
     int retval = 0;
     if (command_args_length != 2)
@@ -331,7 +404,7 @@ cleanup:
     return retval;
 }
 
-int exec_handler(char **command_args, size_t command_args_length)
+int exec_handler(char *const *const command_args, const size_t command_args_length)
 {
     int retval = 0;
     if (command_args_length < 2)
@@ -352,10 +425,10 @@ cleanup:
 }
 
 
-int try_dispatch_builtin_command(char **command_args, size_t command_args_length)
+int try_dispatch_builtin_command(char *const *const command_args, const size_t command_args_length)
 {
     int retval = 0;
-    char *command_program = command_args[0];
+    const char *const command_program = command_args[0];
     if (strcmp(command_program, "exit") == 0)
     {
         goto cleanup;
@@ -383,10 +456,13 @@ cleanup:
 }
 
 
-int execute_command(char **command_args)
+int execute_command(
+    char *const *const command_args, 
+    const char *const stdin_filename, 
+    const char *const stdout_filename)
 {
     int retval = 0;
-    pid_t pid = fork();
+    const pid_t pid = fork();
     if (pid < 0)
     {
         printf("fork failed: %s\n", strerror(errno));
@@ -414,10 +490,58 @@ int execute_command(char **command_args)
     else
     {
         /** Child */
+        int in_fd = -1;
+        int out_fd = -1;
+        if (stdin_filename)
+        {
+            printf("STDIN:%s\n", stdin_filename);
+            in_fd = open(stdin_filename, O_RDONLY);
+            if (in_fd < 0)
+            {
+                printf("open stdin file %s failed: %s\n", stdin_filename, strerror(errno));  
+                retval = -5; 
+                goto child_cleanup;
+            }
+            if (dup2(in_fd, 0) < 0)
+            {
+                printf("dup2 stdin failed:%s\n", strerror(errno));
+                retval = -6;
+                goto child_cleanup;
+            }
+        }
+        
+        if (stdout_filename)
+        {
+            printf("STDOUT:%s\n", stdout_filename);
+            out_fd = open(stdout_filename, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+            if (out_fd < 0)
+            {
+                printf("open stdout file %s failed: %s\n", stdout_filename, strerror(errno));  
+                retval = -7; 
+                goto child_cleanup;
+            }
+            if (dup2(out_fd, 1) < 0)
+            {
+                printf("dup2 stdout failed:%s\n", strerror(errno));
+                retval = -8;
+                goto child_cleanup;
+            }
+        }
+
         if (execv(command_args[0], command_args) < 0)
         {
             printf("child exec failed: %s\n", strerror(errno));
             retval = -4;
+            goto child_cleanup;
+        }
+child_cleanup:
+        if (in_fd > 0)
+        {
+            close(in_fd);
+        }
+        if (out_fd > 0)
+        {
+            close(out_fd);
         }
         /** Terminate child */
         exit(retval); 
@@ -428,7 +552,7 @@ cleanup:
 }
 
 
-int search_file_within_dir(char *filename, char *dirname, char *absolute_path, size_t max_size)
+int search_file_within_dir(const char *const filename, const char *const dirname, char *const absolute_path, const size_t max_size)
 {
     int retval = 0;
     if (dirname == NULL || filename == NULL || absolute_path == NULL)
@@ -467,7 +591,7 @@ cleanup:
 }
 
 
-int resolve_executable_path(char **command_args, char **exec_path)
+int resolve_executable_path(char *const *const command_args, char **const exec_path)
 {
     int retval = 0;
     int valid_absolute_path = 0;
@@ -526,7 +650,12 @@ cleanup:
 }
 
 
-int try_run_executable_command(char **command_args, size_t command_args_length)
+int try_run_executable_command(
+    char **const command_args, 
+    const size_t command_args_length, 
+    const char *const stdin_filename,
+    const char *const stdout_filename
+    )
 {
     int retval = 0;
     char *exec_path = NULL;
@@ -549,7 +678,7 @@ int try_run_executable_command(char **command_args, size_t command_args_length)
         command_args[0] = exec_path;
     }
 
-    if (execute_command(command_args) < 0)
+    if (execute_command(command_args, stdin_filename, stdout_filename) < 0)
     {
         retval = -3;
         goto cleanup;
@@ -560,11 +689,13 @@ cleanup:
 }
 
 
-int parse_command(char *const command)
+int parse_command(const char *const command)
 {
     int retval = 0;
     char *command_args[COMMAND_MAX_ARGS] = {0};
     size_t command_args_length = 0;
+    const char *stdin_filename = NULL;
+    const char *stdout_filename = NULL;
 
     const size_t command_length = strlen(command);
     if (command_length > COMMAND_MAX_SIZE - 1)
@@ -579,7 +710,14 @@ int parse_command(char *const command)
         goto cleanup;
     }
 
-    if (parse_command_arguments(command, command_length, sizeof(command_args), command_args, &command_args_length) < 0)
+    if (parse_command_arguments(
+        command, 
+        command_length, 
+        sizeof(command_args), 
+        command_args, 
+        &command_args_length, 
+        &stdin_filename, 
+        &stdout_filename) < 0)
     {
         retval = -2;
         goto cleanup;
@@ -591,7 +729,7 @@ int parse_command(char *const command)
         goto cleanup;
     }
 
-    if (try_run_executable_command(command_args, command_args_length) == 0)
+    if (try_run_executable_command(command_args, command_args_length, stdin_filename, stdout_filename) == 0)
     {
         /** We've succesfully run an executable-path command, noting left to do */
         goto cleanup;
@@ -633,9 +771,10 @@ int dispatch_commands()
 
         if (parse_command(command_buffer) < 0)
         {
-            /** Parsing error */
+            /** Parsing error.
+             * Do not exit the commands loop. 
+             */
             retval = -2;
-            goto cleanup;
         }
     }
 

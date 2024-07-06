@@ -200,6 +200,45 @@ cleanup:
     return retval;
 }
 
+int resolve_username_argument(
+    const char* const token,
+    const size_t token_length,
+    char *const username, 
+    const size_t username_size,
+    char *const argument,
+    const size_t argument_size
+)
+{
+    int retval = 0;
+    if (get_username_string(username, username_size, token, token_length) < 0)
+    {
+        retval = -1;
+        goto cleanup;
+    }
+    if (write_username_to_argument(username, argument, argument_size) < 0)
+    {
+        retval = -2;
+        goto cleanup;
+    }
+    /** Copy rest of the token to argument, if any */
+    const char *const first_slash = strchr(token, '/');
+    if (first_slash == NULL)
+    {
+        /** no slashes, only "~username" pattern was provided */
+        goto cleanup;
+    }
+    size_t i = 0;
+    while((first_slash[i] == '/') && (&first_slash[i] < token + token_length))
+    {
+        i++;
+    }
+    strncat(argument, &first_slash[i], token_length - i);
+
+cleanup:
+    return retval;
+}
+
+
 int parse_command_arguments(
     char *const command, 
     const size_t command_length,
@@ -208,6 +247,7 @@ int parse_command_arguments(
     size_t *const command_args_length)
 {
     int retval = 0;
+    char token[ARGUMENT_MAX_SIZE] = {0};
     char argument[ARGUMENT_MAX_SIZE] = {0};
     char username[USERNAME_MAX_SIZE] = {0};
 
@@ -238,23 +278,26 @@ int parse_command_arguments(
 
         else
         {
-            size_t token_length = read_token(argument, sizeof(argument), &command[i], command_length - i);
-            if (argument[0] == '~')
+            size_t token_length = read_token(token, sizeof(token), &command[i], command_length - i);
+            printf("TOKEN: %s\n", token);
+            if (token[0] == '~')
             {
-                if (get_username_string(username, sizeof(username), argument, token_length) < 0)
+                /** Token represents special path */
+                if (resolve_username_argument(token, token_length, username, sizeof(username), argument, sizeof(argument)) < 0)
                 {
                     retval = -1;
                     goto cleanup;
                 }
-                if (write_username_to_argument(username, argument, sizeof(argument)) < 0)
-                {
-                    retval = -2;
-                    goto cleanup;
-                }
             }
+            else
+            {
+                /** Regular token */
+                memcpy(argument, token, sizeof(argument));
+            }
+
             if (store_argument(argument, command_args, command_args_length) < 0)
             {
-                retval = -3;
+                retval = -2;
                 goto cleanup;
             };
             i += token_length;

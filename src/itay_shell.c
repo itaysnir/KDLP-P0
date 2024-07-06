@@ -17,7 +17,7 @@ int prompt()
 {
     int retval = 0;
     char absolute_path[ABOSOLUTE_PATH_MAX_SIZE] = {0};
-    char* path = getcwd(absolute_path, sizeof(absolute_path));
+    const char *const path = getcwd(absolute_path, sizeof(absolute_path));
     if (path == NULL)
     {
         retval = -1;
@@ -34,7 +34,7 @@ cleanup:
 }
 
 
-int read_command_line(char *command, size_t length)
+int read_command_line(char *const command, const size_t length)
 {
     int retval = 0;
     if (fgets(command, (int)length, stdin) == NULL)
@@ -51,6 +51,12 @@ cleanup:
 int is_end_of_string(char c)
 {
     return c == '\n' || c == '\0';
+}
+
+
+int is_redirect(char c)
+{
+    return c == '<' || c == '>';
 }
 
 
@@ -153,11 +159,11 @@ cleanup:
 
 
 int parse_command_arguments(
-    char *command, 
-    size_t command_length, 
-    char **command_args, 
-    size_t max_command_args_length, 
-    size_t *command_args_length)
+    char *const command, 
+    const size_t command_length,
+    const size_t command_args_size, 
+    char **const command_args, 
+    size_t *const command_args_length)
 {
     int retval = 0;
     char argument[ARGUMENT_MAX_SIZE] = {0};
@@ -166,7 +172,7 @@ int parse_command_arguments(
     size_t username_start_index = 0;
     size_t argument_pos = 0;
     size_t argument_number = 0;
-    for (size_t i = 0 ; (i < command_length) && (argument_number < max_command_args_length - 1) ; i++)
+    for (size_t i = 0 ; (i < command_length) && (argument_number < command_args_size - 1) ; i++)
     {
         if (!new_username && command[i] == '~')
         {
@@ -204,7 +210,15 @@ int parse_command_arguments(
             argument_pos = 0;
             prev_was_space = 1;
         }
-            
+
+        else if (is_redirect(command[i]))
+        {
+            /** TODO - implement this.
+             * Stage 1 - obtain filename (write a method to read up until the next space, and increment argument_pos)
+             * 
+             */
+        } 
+
         else if (!new_username)
         {
             if (argument_pos >= sizeof(argument))
@@ -215,6 +229,13 @@ int parse_command_arguments(
             argument[argument_pos++] = command[i];
             prev_was_space = 0;
         }
+    }
+
+    if (argument_number >= command_args_size)
+    {
+        *command_args_length = command_args_size;
+        retval = -4;
+        goto cleanup;
     }
 
     command_args[argument_number] = NULL;
@@ -474,13 +495,13 @@ cleanup:
 }
 
 
-int parse_command(char *command)
+int parse_command(char *const command)
 {
     int retval = 0;
-    char* command_args[COMMAND_MAX_ARGS] = {0};
+    char *command_args[COMMAND_MAX_ARGS] = {0};
     size_t command_args_length = 0;
 
-    size_t command_length = strlen(command);
+    const size_t command_length = strlen(command);
     if (command_length > COMMAND_MAX_SIZE - 1)
     {
         retval = -1;
@@ -493,7 +514,7 @@ int parse_command(char *command)
         goto cleanup;
     }
 
-    if (parse_command_arguments(command, command_length, command_args, sizeof(command_args), &command_args_length) < 0)
+    if (parse_command_arguments(command, command_length, sizeof(command_args), command_args, &command_args_length) < 0)
     {
         retval = -2;
         goto cleanup;

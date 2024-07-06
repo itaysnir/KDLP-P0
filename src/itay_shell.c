@@ -60,7 +60,7 @@ int is_redirect(char c)
 }
 
 
-int append_strings_with_slash(char *const dst, size_t dst_size, const char *const src)
+int append_strings_with_slash(char *const dst, const size_t dst_size, const char *const src)
 {
     int retval = 0;
     if (dst == NULL || src == NULL)
@@ -82,7 +82,7 @@ cleanup:
 }
 
 
-int store_and_clear_argument(char* const argument, size_t argument_size, char **const command_args, size_t *argument_number)
+int store_argument(char* const argument, char **const command_args, size_t *command_args_length)
 {
     int retval = 0;
     char *argument_cp = strdup(argument);
@@ -91,9 +91,8 @@ int store_and_clear_argument(char* const argument, size_t argument_size, char **
         retval = -1;
         goto cleanup;
     }
-    command_args[*argument_number] = argument_cp;
-    memset(argument, 0, argument_size);
-    *argument_number += 1;
+    command_args[*command_args_length] = argument_cp;
+    *command_args_length += 1;
 
 cleanup:
     return retval;
@@ -101,27 +100,22 @@ cleanup:
 
 
 int write_username_to_argument(
-    size_t i,
-    size_t username_start_index,
+    const char *const username,
     char *const argument, 
-    size_t argument_size, 
-    size_t *argument_pos,
-    char *const command
+    const size_t argument_size
     )
 {
     int retval = 0;
-    char username[USERNAME_MAX_SIZE] = {0};
-    memcpy(username, &command[username_start_index + 1], i - username_start_index - 1);
+    memset(argument, 0, argument_size);
+
     if (strlen(username) == 0)
     {
         /** Default - use the $HOME env variable */
-        int appended_bytes_count = append_strings_with_slash(argument, argument_size, getenv("HOME"));
-        if (appended_bytes_count < 0)
+        if (append_strings_with_slash(argument, argument_size, getenv("HOME")) < 0)
         {
             retval = -1;
             goto cleanup;
         }
-        *argument_pos += appended_bytes_count;
     }
     else
     {
@@ -129,7 +123,7 @@ int write_username_to_argument(
         const struct passwd *const user_pwd = getpwnam(username);
         if (user_pwd == NULL || user_pwd->pw_dir == NULL)
         {
-            /** No such user, leave the piece unmodified */
+            /** No such user exists, leave the piece unmodified */
             if (strlen(argument) + strlen(username) + 3 >= argument_size)
             {
                 retval = -2;
@@ -138,18 +132,15 @@ int write_username_to_argument(
             strncat(argument, "~", 2);
             strncat(argument, username, argument_size);
             strncat(argument, "/", 2);
-            *argument_pos += strlen(username) + 2;
         }
         else
         {
             /** username found */
-            int appended_bytes_count = append_strings_with_slash(argument, argument_size, user_pwd->pw_dir);
-            if (appended_bytes_count < 0)
+            if (append_strings_with_slash(argument, argument_size, user_pwd->pw_dir) < 0)
             {
                 retval = -3;
                 goto cleanup;
             }
-            *argument_pos += appended_bytes_count; 
         }
     }
 
@@ -157,6 +148,57 @@ cleanup:
     return retval;
 }
 
+size_t read_token(char *const token, const size_t token_size, char *const component, const size_t component_length)
+{
+    size_t i = 0;
+    memset(token, 0, token_size);
+    while (
+        !is_end_of_string(component[i]) &&
+        !isspace(component[i]) &&
+        !is_redirect(component[i] && 
+        i < token_size - 1 &&
+        i < component_length)
+    )
+    {
+        token[i] = component[i];
+        i++;
+    }
+
+    return i;
+}
+
+int get_username_string(
+    char *const username, 
+    const size_t username_size, 
+    const char *const token, 
+    const size_t token_length
+)
+{
+    int retval = 0;
+    memset(username, 0, username_size);
+    if (token_length <= 1)
+    {
+        /** Only '~' as username string - OK */
+        retval = 0;
+        goto cleanup;
+    }
+
+    if (token_length > username_size - 1)
+    {
+        retval = -1;
+        goto cleanup;
+    }
+
+    size_t i = 1;
+    while (token[i] != '/' && i < token_length)
+    {
+        username[i - 1] = token[i];
+        i++;
+    }
+
+cleanup:
+    return retval;
+}
 
 int parse_command_arguments(
     char *const command, 
@@ -167,79 +209,59 @@ int parse_command_arguments(
 {
     int retval = 0;
     char argument[ARGUMENT_MAX_SIZE] = {0};
-    int new_username = 0;
-    int prev_was_space = 0;
-    size_t username_start_index = 0;
-    size_t argument_pos = 0;
-    size_t argument_number = 0;
-    for (size_t i = 0 ; (i < command_length) && (argument_number < command_args_size - 1) ; i++)
+    char username[USERNAME_MAX_SIZE] = {0};
+
+    size_t i = 0;
+    while (
+        (i <= command_length) &&
+        (*command_args_length < command_args_size - 1) 
+    )
     {
-        if (!new_username && command[i] == '~')
+        if (isspace(command[i]))
         {
-            prev_was_space = 0;
-            new_username = 1;
-            username_start_index = i;
+            i++;
+            continue;
         }
-        else if (new_username && (command[i] == '/' || is_end_of_string(command[i])))
+
+        else if (is_end_of_string(command[i]))
         {
-            prev_was_space = 0;
-            new_username = 0;
-            if (write_username_to_argument(i, username_start_index, argument, sizeof(argument), &argument_pos, command) < 0)
+            break;
+        }
+
+        // else if (is_redirect(command[i]))
+        // {
+        //     /** TODO - implement this.
+        //      * Stage 1 - obtain filename (write a method to read up until the next space, and increment argument_pos)
+        //      * Notice - redirects can appear also in the middle of a token. 
+        //      */
+        // } 
+
+        else
+        {
+            size_t token_length = read_token(argument, sizeof(argument), &command[i], command_length - i);
+            if (argument[0] == '~')
             {
-                retval = -1;
-                goto cleanup;
-            }
-            if (is_end_of_string(command[i]))
-            {
-                if (store_and_clear_argument(argument, sizeof(argument), command_args, &argument_number) < 0)
+                if (get_username_string(username, sizeof(username), argument, token_length) < 0)
                 {
                     retval = -1;
                     goto cleanup;
                 }
+                if (write_username_to_argument(username, argument, sizeof(argument)) < 0)
+                {
+                    retval = -2;
+                    goto cleanup;
+                }
             }
-        }
-
-        else if (isspace(command[i]))
-        {
-            if (prev_was_space) { continue; }
-            if (store_and_clear_argument(argument, sizeof(argument), command_args, &argument_number) < 0)
-            {
-                retval = -1;
-                goto cleanup;
-            };
-            argument_pos = 0;
-            prev_was_space = 1;
-        }
-
-        else if (is_redirect(command[i]))
-        {
-            /** TODO - implement this.
-             * Stage 1 - obtain filename (write a method to read up until the next space, and increment argument_pos)
-             * 
-             */
-        } 
-
-        else if (!new_username)
-        {
-            if (argument_pos >= sizeof(argument))
+            if (store_argument(argument, command_args, command_args_length) < 0)
             {
                 retval = -3;
                 goto cleanup;
-            }
-            argument[argument_pos++] = command[i];
-            prev_was_space = 0;
+            };
+            i += token_length;
         }
     }
-
-    if (argument_number >= command_args_size)
-    {
-        *command_args_length = command_args_size;
-        retval = -4;
-        goto cleanup;
-    }
-
-    command_args[argument_number] = NULL;
-    *command_args_length = argument_number;
+    /** Argv pointers array should be null terminated */
+    command_args[*command_args_length] = NULL;
 
 cleanup:
     return retval;

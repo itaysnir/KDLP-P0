@@ -14,9 +14,6 @@
 #include "itay_shell.h"
 
 
-static int shell_pipe[2] = {0};
-
-
 int prompt()
 {
     int retval = 0;
@@ -51,6 +48,10 @@ cleanup:
     return retval;
 }
 
+int is_last_command(const char *const command)
+{
+    return command[strlen(command) - 1] == '\n';
+}
 
 int is_end_of_string(const char c)
 {
@@ -459,7 +460,9 @@ int execute_command(
     char *const *const command_args, 
     const char *const stdin_filename, 
     const char *const stdout_filename,
-    const e_command_order order)
+    const int pipe_in,
+    const int pipe_out    
+)
 {
     int retval = 0;
     const pid_t pid = fork();
@@ -489,32 +492,28 @@ int execute_command(
     }
     else
     {
-        /** TODO - add for all childs (except for first / last?) 
-         * a call for dup2 on both pipe[0] - stdin pipe[1] - stdout*/
         /** Child */
-        if (order == INTERMEDIATE_COMMAND || order == LAST_COMMAND)
+        if (pipe_in != PIPE_INVALID)
         {
-            printf("DUPING STDIN\n");
-            if (dup2(shell_pipe[0], STDIN_FILENO) < 0)
+            if (dup2(pipe_in, STDIN_FILENO) < 0)
             {
                 printf("dup2 stdin failed\n");
                 retval = -1;
                 goto cleanup;
             }
-            close(shell_pipe[1]);
         }
         
-        if (order == INTERMEDIATE_COMMAND || order == FIRST_COMMAND)
+        if (pipe_out != PIPE_INVALID)
         {
-            printf("DUPING STDOUT\n");
-            if (dup2(shell_pipe[1], STDOUT_FILENO) < 0)
+            if (dup2(pipe_out, STDOUT_FILENO) < 0)
             {
                 printf("dup2 stdout failed\n");
                 retval = -2;
                 goto cleanup;
             }
-            close(shell_pipe[0]);
         }
+        close(pipe_in);
+        close(pipe_out);
         
         int in_fd = -1;
         int out_fd = -1;
@@ -682,7 +681,8 @@ int try_dispatch_executable_command(
     const size_t command_args_length, 
     const char *const stdin_filename,
     const char *const stdout_filename,
-    const e_command_order order
+    const int pipe_in,
+    const int pipe_out
     )
 {
     int retval = 0;
@@ -706,7 +706,7 @@ int try_dispatch_executable_command(
         command_args[0] = exec_path;
     }
 
-    if (execute_command(command_args, stdin_filename, stdout_filename, order) < 0)
+    if (execute_command(command_args, stdin_filename, stdout_filename, pipe_in, pipe_out) < 0)
     {
         retval = -3;
         goto cleanup;
@@ -717,7 +717,7 @@ cleanup:
 }
 
 
-int parse_and_execute_command(const char *const command, const e_command_order order)
+int parse_and_execute_command(const char *const command, const int pipe_in, const int pipe_out)
 {
     int retval = 0;
     char *command_args[COMMAND_MAX_ARGS] = {0};
@@ -757,7 +757,7 @@ int parse_and_execute_command(const char *const command, const e_command_order o
         goto cleanup;
     }
 
-    if (try_dispatch_executable_command(command_args, command_args_length, stdin_filename, stdout_filename, order) == 0)
+    if (try_dispatch_executable_command(command_args, command_args_length, stdin_filename, stdout_filename, pipe_in, pipe_out) == 0)
     {
         /** We've succesfully run an executable-path command, noting left to do */
         goto cleanup;
@@ -782,7 +782,6 @@ int dispatch_commands()
     while (1)
     {
         memset(command_buffer, 0, sizeof(command_buffer));
-
         if (prompt() < 0)
         {
             /** Couldn't print prompt for some obscure reason. Terminate. */
@@ -797,38 +796,40 @@ int dispatch_commands()
             goto cleanup;
         }
 
-        // parse_and_execute_command(command_buffer);
-
-        /** TODO: we can add strtok for a pipe, and splitting to sub-commands that way. 
-         * Each sub-command would initialize its own set of pipes?
-         */
+        int commands_pipe[2] = {0};
+        int pipe_in = PIPE_INVALID;
+        int pipe_out = PIPE_INVALID; 
+ 
         char *saveptr = NULL;
         const char *command = strtok_r(command_buffer, "|", &saveptr);
-        e_command_order command_order = FIRST_COMMAND;
         while (command != NULL)
         {
-            printf("command:\"%s\" command length:%lu\n", command ,strlen(command));
-            if (command[strlen(command) - 1] == '\n')
+            if (pipe(commands_pipe) < 0)
             {
-                if (command_order == FIRST_COMMAND)
-                {
-                    command_order = FIRST_AND_LAST_COMMAND;
-                }
-                else
-                {
-                    command_order = LAST_COMMAND;
-                }
+                printf("error initializing pipe:%s\n", strerror(errno));
+                retval = -1;
+                goto cleanup;
             }
-            printf("command order:%d\n", command_order);
-            if (parse_and_execute_command(command, command_order) < 0)
+            pipe_out = commands_pipe[PIPE_WRITE];
+
+            if (is_last_command(command))
+            {
+                close(commands_pipe[PIPE_READ]);
+                close(commands_pipe[PIPE_WRITE]);
+                pipe_out = PIPE_INVALID;
+            }
+
+            if (parse_and_execute_command(command, pipe_in, pipe_out) < 0)
             {
                 /** Parsing error.
                 * Do not exit the commands loop. 
                 */
                 retval = -2;
             }
+            close(pipe_in);
+            close(pipe_out);
+            pipe_in = commands_pipe[PIPE_READ];
             command = strtok_r(NULL, "|", &saveptr);
-            command_order = INTERMEDIATE_COMMAND;
         }
     }
 
@@ -840,16 +841,6 @@ cleanup:
 int start_shell()
 {
     int retval = 0;
-    if (pipe(shell_pipe) < 0)
-    {
-        printf("error initializing pipe:%s\n", strerror(errno));
-        retval = -1;
-        goto cleanup;
-    }
     retval = dispatch_commands();
-
-cleanup:
-    close(shell_pipe[0]);
-    close(shell_pipe[1]);
     return retval;
 }

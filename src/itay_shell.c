@@ -424,6 +424,42 @@ cleanup:
     return retval;
 }
 
+int export_handler(char *const *const command_args, const size_t command_args_length)
+{
+    int retval = 0;
+    if (command_args_length != 2)
+    {
+        printf("export: takes exactly one argument\n");
+        goto cleanup;
+    }
+
+    char *saveptr = NULL;
+    const char *const name = strtok_r(command_args[1], "=", &saveptr);
+    if (name == NULL)
+    {
+        printf("export failed: missing '=' delimiter\n");
+        retval = -1;
+        goto cleanup;
+    }
+
+    const char *const value = strtok_r(NULL, "=", &saveptr);
+    if (value == NULL)
+    {
+        printf("export failed: invalid value\n");
+        retval = -2;
+        goto cleanup;
+    }
+
+    if (setenv(name, value, 1) < 0)
+    {
+        printf("export failed: %s\n", strerror(errno));
+        retval = -3;
+        goto cleanup;
+    }
+
+cleanup:
+    return retval;
+}
 
 int try_dispatch_builtin_command(char *const *const command_args, const size_t command_args_length)
 {
@@ -445,6 +481,13 @@ int try_dispatch_builtin_command(char *const *const command_args, const size_t c
         exec_handler(command_args, command_args_length);
         goto cleanup;
     }
+
+    else if (strcmp(command_program, "export") == 0)
+    {
+        export_handler(command_args, command_args_length);
+        goto cleanup;
+    }
+
 
     else
     {
@@ -519,7 +562,6 @@ int execute_command(
         int out_fd = -1;
         if (stdin_filename)
         {
-            printf("STDIN:%s\n", stdin_filename);
             in_fd = open(stdin_filename, O_RDONLY);
             if (in_fd < 0)
             {
@@ -537,7 +579,6 @@ int execute_command(
         
         if (stdout_filename)
         {
-            printf("STDOUT:%s\n", stdout_filename);
             out_fd = open(stdout_filename, O_WRONLY | O_CREAT | O_TRUNC, 0664);
             if (out_fd < 0)
             {

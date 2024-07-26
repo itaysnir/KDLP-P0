@@ -3,6 +3,7 @@ CFLAGS=-I$(IDIR) -Wall -Wextra -Wpedantic
 IDIR=include
 SRCDIR=src
 
+PROGRAM=itay_shell
 ODIR=obj
 LIBS=
 
@@ -13,14 +14,14 @@ _OBJ = main.o itay_shell.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 
-all: itay_shell
+all: $(PROGRAM)
 
 
 $(ODIR)/%.o: $(SRCDIR)/%.c $(DEPS) build
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 
-itay_shell: $(OBJ)
+$(PROGRAM): $(OBJ)
 	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 
 
@@ -29,7 +30,7 @@ build:
 
 
 clean:
-	rm -rf $(ODIR) *.swp core $(IDIR)/*.swp
+	rm -rf $(PROGRAM) $(ODIR) *.swp core $(IDIR)/*.swp
 
 
 .PHONY: build clean

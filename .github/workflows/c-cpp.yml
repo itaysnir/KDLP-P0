@@ -13,5 +13,4 @@ jobs:
     - uses: actions/checkout@v4
     - name: make
       run: |
-        mkdir -p obj/
         make

@@ -12,4 +12,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: make
-      run: make
+      run: |
+        mkdir -p obj/
+        make

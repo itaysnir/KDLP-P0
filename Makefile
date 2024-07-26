@@ -13,7 +13,10 @@ _OBJ = main.o itay_shell.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 
-$(ODIR)/%.o: $(SRCDIR)/%.c $(DEPS)
+all: itay_shell
+
+
+$(ODIR)/%.o: $(SRCDIR)/%.c $(DEPS) build
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 
@@ -21,7 +24,12 @@ itay_shell: $(OBJ)
 	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 
 
-.PHONY: clean
+build:
+	mkdir -p $(ODIR)
+
 
 clean:
-	rm -f $(ODIR)/*.o *.swp core $(IDIR)/*.swp
+	rm -rf $(ODIR) *.swp core $(IDIR)/*.swp
+
+
+.PHONY: build clean

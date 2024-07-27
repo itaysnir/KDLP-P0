@@ -329,17 +329,22 @@ int parse_command(
             if (command[i] == '<')
             {
                 *stdin_filename = strdup(argument);
+                if (*stdin_filename == NULL)
+                {
+                    retval = -4;
+                    goto cleanup;
+                }
             }
             else
             {
                 *stdout_filename = strdup(argument);
+                if (*stdout_filename== NULL)
+                {
+                    retval = -5;
+                    goto cleanup;
+                }
             }
-            if (*stdin_filename == NULL && *stdout_filename == NULL)
-            {
-                retval = -4;
-                goto cleanup;
-            }
-
+            
             i += 1 + whitespaces_count + token_length;
         }
 
@@ -490,6 +495,12 @@ int execute_command(
     const int pipe_out)
 {
     int retval = 0;
+    if (command_args == NULL || command_args[0] == NULL)
+    {
+        retval = -1;
+        goto cleanup;
+    }
+
     const pid_t pid = fork();
     if (pid < 0)
     {
@@ -698,7 +709,6 @@ cleanup:
 
 int try_dispatch_executable_command(
     char **const command_args,
-    const size_t command_args_length,
     const char *const stdin_filename,
     const char *const stdout_filename,
     const int pipe_in,
@@ -706,13 +716,6 @@ int try_dispatch_executable_command(
 {
     int retval = 0;
     char *exec_path = NULL;
-
-    if (command_args_length < 1)
-    {
-        retval = -1;
-        goto cleanup;
-    }
-
     if (command_args[0][0] != '.' && command_args[0][0] != '/')
     {
         if (resolve_executable_path(command_args, &exec_path) < 0)
@@ -738,7 +741,7 @@ cleanup:
 int parse_and_execute_command(const char *const command, const int pipe_in, const int pipe_out)
 {
     int retval = 0;
-    char *command_args[COMMAND_MAX_ARGS] = {0};
+    char *command_args[COMMAND_MAX_ARGS] = { NULL };
     size_t command_args_length = 0;
     const char *stdin_filename = NULL;
     const char *stdout_filename = NULL;
@@ -769,13 +772,19 @@ int parse_and_execute_command(const char *const command, const int pipe_in, cons
         goto cleanup;
     }
 
+    if (command_args_length < 1)
+    {
+        retval = -3;
+        goto cleanup;
+    }
+
     if (try_dispatch_builtin_command(command_args, command_args_length) == 0)
     {
         /** We've successfully run a builtin command, nothing left to do */
         goto cleanup;
     }
 
-    if (try_dispatch_executable_command(command_args, command_args_length, stdin_filename, stdout_filename, pipe_in, pipe_out) == 0)
+    if (try_dispatch_executable_command(command_args, stdin_filename, stdout_filename, pipe_in, pipe_out) == 0)
     {
         /** We've succesfully run an executable-path command, noting left to do */
         goto cleanup;

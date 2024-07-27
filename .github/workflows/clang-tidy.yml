@@ -1,0 +1,15 @@
+name: clang-tidy 
+on: [push]
+
+jobs:
+  build:
+    name: clang-tidy-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-tidy 
+        run: |
+          sudo apt install clang-tidy
+          sudo apt install bear
+          bear -- make
+          clang-tidy --checks=cert --warnings-as-errors=* src/* include/*

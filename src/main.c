@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include "itay_shell.h"
 
 

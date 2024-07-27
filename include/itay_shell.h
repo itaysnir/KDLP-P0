@@ -1,5 +1,5 @@
-#ifndef ITAYSHELL_H
-#define ITAYSHELL_H
+#ifndef ITAY_SHELL_H
+#define ITAY_SHELL_H
 
 #include <stddef.h>
 

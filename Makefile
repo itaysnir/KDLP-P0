@@ -30,7 +30,7 @@ build:
 
 
 clean:
-	rm -rf $(PROGRAM) $(ODIR) *.swp core $(IDIR)/*.swp
+	rm -rf $(PROGRAM) $(ODIR) *.swp core $(IDIR)/*.swp compile_commands.json
 
 
 .PHONY: build clean

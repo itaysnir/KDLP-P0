@@ -1,0 +1,34 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-Iinclude",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-o",
+      "obj/main.o",
+      "src/main.c"
+    ],
+    "directory": "/home/itay/Desktop/kdlp/KDLP-P0",
+    "file": "/home/itay/Desktop/kdlp/KDLP-P0/src/main.c",
+    "output": "/home/itay/Desktop/kdlp/KDLP-P0/obj/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-Iinclude",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-o",
+      "obj/itay_shell.o",
+      "src/itay_shell.c"
+    ],
+    "directory": "/home/itay/Desktop/kdlp/KDLP-P0",
+    "file": "/home/itay/Desktop/kdlp/KDLP-P0/src/itay_shell.c",
+    "output": "/home/itay/Desktop/kdlp/KDLP-P0/obj/itay_shell.o"
+  }
+]

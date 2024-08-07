@@ -54,4 +54,4 @@ dkms.conf
 # Project specific
 compile_commands.json
 itay_shell
-
+.vscode/

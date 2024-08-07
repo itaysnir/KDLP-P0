@@ -13,7 +13,8 @@
 #include <fcntl.h>
 #include "itay_shell.h"
 
-int prompt()
+
+static int prompt()
 {
     int retval = 0;
     char absolute_path[ABOSOLUTE_PATH_MAX_SIZE] = {0};
@@ -33,7 +34,7 @@ cleanup:
     return retval;
 }
 
-int read_command_line(char *const command, const size_t length)
+static int read_command_line(char *const command, const size_t length)
 {
     int retval = 0;
     if (fgets(command, (int)length, stdin) == NULL)
@@ -46,22 +47,22 @@ cleanup:
     return retval;
 }
 
-int is_last_command(const char *const command)
+static inline int is_last_command(const char *const command)
 {
     return command[strlen(command) - 1] == '\n';
 }
 
-int is_end_of_string(const char c)
+static inline int is_end_of_string(const char c)
 {
     return c == '\n' || c == '\0';
 }
 
-int is_redirect(const char c)
+static inline int is_redirect(const char c)
 {
     return c == '<' || c == '>';
 }
 
-int append_strings_with_slash(char *const dst, const size_t dst_size, const char *const src)
+static int append_strings_with_slash(char *const dst, const size_t dst_size, const char *const src)
 {
     int retval = 0;
     if (dst == NULL || src == NULL)
@@ -82,7 +83,7 @@ cleanup:
     return retval;
 }
 
-int store_argument(const char *const argument, char **const command_args, size_t *const command_args_length)
+static int store_argument(const char *const argument, char **const command_args, size_t *const command_args_length)
 {
     int retval = 0;
     char *const argument_cp = strdup(argument);
@@ -98,7 +99,7 @@ cleanup:
     return retval;
 }
 
-int write_username_to_argument(
+static int write_username_to_argument(
     const char *const username,
     char *const argument,
     const size_t argument_size)
@@ -146,7 +147,7 @@ cleanup:
     return retval;
 }
 
-size_t read_whitespaces(const char *const component, const size_t component_length)
+static size_t read_whitespaces(const char *const component, const size_t component_length)
 {
     size_t i = 0;
     while (
@@ -159,7 +160,7 @@ size_t read_whitespaces(const char *const component, const size_t component_leng
     return i;
 }
 
-size_t read_token(char *const token, const size_t token_size, const char *const component, const size_t component_length)
+static size_t read_token(char *const token, const size_t token_size, const char *const component, const size_t component_length)
 {
     size_t i = 0;
     memset(token, 0, token_size);
@@ -177,7 +178,7 @@ size_t read_token(char *const token, const size_t token_size, const char *const 
     return i;
 }
 
-int get_username_string(
+static int get_username_string(
     char *const username,
     const size_t username_size,
     const char *const token,
@@ -209,7 +210,7 @@ cleanup:
     return retval;
 }
 
-int resolve_username_argument(
+static int resolve_username_argument(
     const char *const token,
     const size_t token_length,
     char *const username,
@@ -246,7 +247,7 @@ cleanup:
     return retval;
 }
 
-int try_parse_username_path_argument(
+static int try_parse_username_path_argument(
     char *const token,
     const size_t token_length,
     char *const username,
@@ -273,7 +274,7 @@ cleanup:
     return retval;
 }
 
-int parse_command(
+static int parse_command(
     const char *const command,
     const size_t command_length,
     const size_t command_args_size,
@@ -374,7 +375,7 @@ cleanup:
     return retval;
 }
 
-int cd_handler(char *const *const command_args, const size_t command_args_length)
+static int cd_handler(char *const *const command_args, const size_t command_args_length)
 {
     int retval = 0;
     if (command_args_length != 2)
@@ -394,7 +395,7 @@ cleanup:
     return retval;
 }
 
-int exec_handler(char *const *const command_args, const size_t command_args_length)
+static int exec_handler(char *const *const command_args, const size_t command_args_length)
 {
     int retval = 0;
     if (command_args_length < 2)
@@ -414,7 +415,7 @@ cleanup:
     return retval;
 }
 
-int export_handler(char *const *const command_args, const size_t command_args_length)
+static int export_handler(char *const *const command_args, const size_t command_args_length)
 {
     int retval = 0;
     if (command_args_length != 2)
@@ -451,7 +452,7 @@ cleanup:
     return retval;
 }
 
-int try_dispatch_builtin_command(char *const *const command_args, const size_t command_args_length)
+static int try_dispatch_builtin_command(char *const *const command_args, const size_t command_args_length)
 {
     int retval = 0;
     const char *const command_program = command_args[0];
@@ -487,7 +488,7 @@ cleanup:
     return retval;
 }
 
-int execute_command(
+static int execute_command(
     char *const *const command_args,
     const char *const stdin_filename,
     const char *const stdout_filename,
@@ -610,7 +611,7 @@ cleanup:
     return retval;
 }
 
-int search_file_within_dir(const char *const filename, const char *const dirname, char *const absolute_path, const size_t max_size)
+static int search_file_within_dir(const char *const filename, const char *const dirname, char *const absolute_path, const size_t max_size)
 {
     int retval = 0;
     if (dirname == NULL || filename == NULL || absolute_path == NULL)
@@ -648,7 +649,7 @@ cleanup:
     return retval;
 }
 
-int resolve_executable_path(char *const *const command_args, char **const exec_path)
+static int resolve_executable_path(char *const *const command_args, char **const exec_path)
 {
     int retval = 0;
     int valid_absolute_path = 0;
@@ -707,7 +708,7 @@ cleanup:
     return retval;
 }
 
-int try_dispatch_executable_command(
+static int try_dispatch_executable_command(
     char **const command_args,
     const char *const stdin_filename,
     const char *const stdout_filename,
@@ -738,7 +739,7 @@ cleanup:
     return retval;
 }
 
-int parse_and_execute_command(const char *const command, const int pipe_in, const int pipe_out)
+static int parse_and_execute_command(const char *const command, const int pipe_in, const int pipe_out)
 {
     int retval = 0;
     char *command_args[COMMAND_MAX_ARGS] = { NULL };
@@ -808,7 +809,7 @@ cleanup:
     return retval;
 }
 
-int dispatch_piped_command(char *const command_buffer)
+static int dispatch_piped_command(char *const command_buffer)
 {
     int retval = 0;
     int commands_pipe[2] = {0};
@@ -851,7 +852,7 @@ cleanup:
     return retval;
 }
 
-int dispatch_commands()
+static int dispatch_commands()
 {
     int retval = 0;
     char command_buffer[COMMAND_MAX_SIZE] = {0};

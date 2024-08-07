@@ -14,6 +14,11 @@
 #include "itay_shell.h"
 
 
+const int PIPE_INVALID = -1;
+const size_t PIPE_READ = 0;
+const size_t PIPE_WRITE = 1;
+
+
 static int prompt()
 {
     int retval = 0;
@@ -34,10 +39,10 @@ cleanup:
     return retval;
 }
 
-static int read_command_line(char *const command, const size_t length)
+static int read_command_line(char *const command, const size_t command_size)
 {
     int retval = 0;
-    if (fgets(command, (int)length, stdin) == NULL)
+    if (fgets(command, (int)command_size, stdin) == NULL)
     {
         retval = -1;
         goto cleanup;
@@ -739,7 +744,12 @@ cleanup:
     return retval;
 }
 
-static int parse_and_execute_command(const char *const command, const int pipe_in, const int pipe_out)
+static int parse_and_execute_command(
+    const char *const command, 
+    const size_t command_size, 
+    const int pipe_in, 
+    const int pipe_out
+    )
 {
     int retval = 0;
     char *command_args[COMMAND_MAX_ARGS] = { NULL };
@@ -748,7 +758,7 @@ static int parse_and_execute_command(const char *const command, const int pipe_i
     const char *stdout_filename = NULL;
 
     const size_t command_length = strlen(command);
-    if (command_length > COMMAND_MAX_SIZE - 1)
+    if (command_length > command_size - 1)
     {
         retval = -1;
         goto cleanup;
@@ -809,7 +819,7 @@ cleanup:
     return retval;
 }
 
-static int dispatch_piped_command(char *const command_buffer)
+static int dispatch_piped_command(char *const command_buffer, const size_t command_buffer_size)
 {
     int retval = 0;
     int commands_pipe[2] = {0};
@@ -835,7 +845,7 @@ static int dispatch_piped_command(char *const command_buffer)
             pipe_out = PIPE_INVALID;
         }
 
-        if (parse_and_execute_command(command, pipe_in, pipe_out) < 0)
+        if (parse_and_execute_command(command, command_buffer_size, pipe_in, pipe_out) < 0)
         {
             /** Parsing error.
              * Do not exit the commands loop.
@@ -874,7 +884,7 @@ static int dispatch_commands()
             goto cleanup;
         }
 
-        if (dispatch_piped_command(command_buffer) < 0)
+        if (dispatch_piped_command(command_buffer, sizeof(command_buffer)) < 0)
         {
             retval = -2;
             goto cleanup;

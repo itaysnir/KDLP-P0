@@ -9,9 +9,10 @@
 #define USERNAME_MAX_SIZE 256
 #define ARGUMENT_MAX_SIZE 1024
 
-static const int PIPE_INVALID = -1;
-static const size_t PIPE_READ = 0;
-static const size_t PIPE_WRITE = 1;
+extern const int PIPE_INVALID;
+extern const size_t PIPE_READ;
+extern const size_t PIPE_WRITE;
+
 
 int start_shell();
 
